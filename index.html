@@ -264,15 +264,15 @@
 
     function initRdkitModuleWithFallback() {
       if (!rdkitInitPromise) {
-        rdkitInitPromise = loadScript(RDKIT_CDN_JS)
+        rdkitInitPromise = loadScript(RDKIT_LOCAL_JS)
           .catch(err => {
             console.warn("CDN 版 RDKit_minimal.js 加载失败，回退到本地文件。", err);
-            return loadScript(RDKIT_LOCAL_JS);
+            return loadScript(RDKIT_CDN_JS);
           })
-          .then(() => fetchWasm(RDKIT_CDN_WASM)
+          .then(() => fetchWasm(RDKIT_LOCAL_WASM)
             .catch(err => {
               console.warn("CDN wasm 加载失败，回退到本地 wasm。", err);
-              return fetchWasm(RDKIT_LOCAL_WASM).catch(wasmErr => {
+              return fetchWasm(RDKIT_CDN_WASM).catch(wasmErr => {
                 console.warn("本地 wasm 也加载失败，将由 Emscripten 自行获取。", wasmErr);
                 return null;
               });
@@ -284,7 +284,7 @@
             const moduleConfig = {
               locateFile: (file) => {
                 if (file.endsWith(".wasm")) {
-                  return wasmBinary ? RDKIT_CDN_WASM : RDKIT_LOCAL_WASM;
+                  return wasmBinary ? RDKIT_LOCAL_WASM : RDKIT_CDN_WASM;
                 }
                 return file;
               }
