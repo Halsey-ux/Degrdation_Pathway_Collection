@@ -41,11 +41,17 @@ def load_html():
     # 因此将资源路径指向 GitHub Raw，保证云端可以加载。
     asset_base = (
         "https://raw.githubusercontent.com/Halsey-ux/"
-        "Degrdation-Pathway-Collection/main"
+        "Degrdation_Pathway_Collection/main"
     )
     replacements = {
         'src="rdkit_minimal.js"': f'src="{asset_base}/rdkit_minimal.js"',
         'href="RDKit_minimal.wasm"': f'href="{asset_base}/RDKit_minimal.wasm"',
+        'const RDKIT_LOCAL_JS = "rdkit_minimal.js";': (
+            f'const RDKIT_LOCAL_JS = "{asset_base}/rdkit_minimal.js";'
+        ),
+        'const RDKIT_LOCAL_WASM = "RDKit_minimal.wasm";': (
+            f'const RDKIT_LOCAL_WASM = "{asset_base}/RDKit_minimal.wasm";'
+        ),
     }
     for src, target in replacements.items():
         content = content.replace(src, target)
