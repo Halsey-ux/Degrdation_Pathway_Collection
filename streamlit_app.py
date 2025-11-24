@@ -19,14 +19,17 @@ st.markdown("""
     <style>
         #MainMenu, footer, header {visibility: hidden;}
         .stApp {
-            padding: 0;
-            background: #e9edf2;
+            padding: 0 !important;
+            background: #fefefe;
         }
+        [data-testid="stSidebar"] {display: none;}
         .block-container {
-            padding: 0;
-            max-width: 100%;
+            padding: 0 !important;
+            max-width: 100% !important;
         }
-        .st-emotion-cache-1wrcr25, .st-emotion-cache-1dp5vir {padding: 0;}
+        .st-emotion-cache-1wrcr25,
+        .st-emotion-cache-1dp5vir,
+        .st-emotion-cache-13ln4jf {padding: 0 !important;}
     </style>
 """, unsafe_allow_html=True)
 
