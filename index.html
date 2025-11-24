@@ -312,6 +312,7 @@
     const exportBtn = document.getElementById("exportBtn");
     const statusEl = document.getElementById("status");
     const svg = d3.select("#canvas");
+    svg.style("display", "block");
     const g = svg.append("g").attr("class", "viewport");
     const circleRadius = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--node-radius"), 10);
     const imageScale = 0.9;
@@ -433,14 +434,12 @@
       try {
         const prepared = await attachSvgs(tree);
         const root = d3.hierarchy(prepared);
-        const width = svg.node().clientWidth || window.innerWidth;
-        const height = svg.node().clientHeight || (window.innerHeight - 200);
-        svg.attr("width", width).attr("height", height);
+        const containerWidth = svg.node().parentNode.clientWidth;
+        const containerHeight = svg.node().parentNode.clientHeight;
+        svg.attr("width", containerWidth).attr("height", containerHeight);
 
-        const treeLayout = d3.tree().nodeSize([150, NODE_VERTICAL_SPACING]);
+        const treeLayout = d3.tree().nodeSize([160, NODE_VERTICAL_SPACING]);
         treeLayout(root);
-        const xOffset = width / 2;
-        root.each(d => { d.x += xOffset; });
 
         const links = g.selectAll(".link").data(root.links(), d => d.target.data.id);
         links.enter()
