@@ -41,7 +41,8 @@ html_content = load_html()
 
 if html_content:
     # 使用 st.components.v1.html 来渲染 HTML
-    st.components.v1.html(html_content, height=800, scrolling=True)
+    # height 设置为足够大以容纳整个应用
+    st.components.v1.html(html_content, height=900, scrolling=True)
 else:
     st.error("无法找到 index.html 文件。请确保文件存在于项目根目录。")
 
