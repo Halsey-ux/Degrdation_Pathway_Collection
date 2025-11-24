@@ -37,24 +37,33 @@ def load_html():
     with open(html_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Streamlit 的 iframe 无法直接访问本地的 rdkit_minimal.js / RDKit_minimal.wasm，
-    # 因此将资源路径指向 GitHub Raw，保证云端可以加载。
-    asset_base = (
-        "https://raw.githubusercontent.com/Halsey-ux/"
-        "Degrdation-Pathway-Collection/main"
-    )
-    replacements = {
-        'src="rdkit_minimal.js"': f'src="{asset_base}/rdkit_minimal.js"',
-        'href="RDKit_minimal.wasm"': f'href="{asset_base}/RDKit_minimal.wasm"',
-        'const RDKIT_LOCAL_JS = "rdkit_minimal.js";': (
-            f'const RDKIT_LOCAL_JS = "{asset_base}/rdkit_minimal.js";'
-        ),
-        'const RDKIT_LOCAL_WASM = "RDKit_minimal.wasm";': (
-            f'const RDKIT_LOCAL_WASM = "{asset_base}/RDKit_minimal.wasm";'
-        ),
-    }
-    for src, target in replacements.items():
-        content = content.replace(src, target)
+    # 将本地 RDKit 文件打包成 data URI，这样 Streamlit Cloud 无需访问外部网络即可加载。
+    def encode_data_uri(path: str, mime: str) -> str:
+        if not os.path.exists(path):
+            return ""
+        import base64
+
+        with open(path, "rb") as file:
+            data = base64.b64encode(file.read()).decode("ascii")
+        return f"data:{mime};base64,{data}"
+
+    js_data_uri = encode_data_uri("rdkit_minimal.js", "application/javascript")
+    wasm_data_uri = encode_data_uri("RDKit_minimal.wasm", "application/wasm")
+
+    replacements = {}
+    if js_data_uri:
+        replacements['src="rdkit_minimal.js"'] = f'src="{js_data_uri}"'
+        replacements['const RDKIT_LOCAL_JS = "rdkit_minimal.js";'] = (
+            f'const RDKIT_LOCAL_JS = "{js_data_uri}";'
+        )
+    if wasm_data_uri:
+        replacements['href="RDKit_minimal.wasm"'] = f'href="{wasm_data_uri}"'
+        replacements['const RDKIT_LOCAL_WASM = "RDKit_minimal.wasm";'] = (
+            f'const RDKIT_LOCAL_WASM = "{wasm_data_uri}";'
+        )
+
+    for needle, value in replacements.items():
+        content = content.replace(needle, value)
 
     return content
 
