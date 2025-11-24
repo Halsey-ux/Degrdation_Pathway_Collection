@@ -26,15 +26,31 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 读取 HTML 文件
+# 读取并处理 HTML 文件
 @st.cache_data
 def load_html():
-    """加载 HTML 文件内容"""
+    """加载 HTML 文件内容并替换静态资源路径，方便在 Streamlit Cloud 中访问。"""
     html_file = "index.html"
-    if os.path.exists(html_file):
-        with open(html_file, "r", encoding="utf-8") as f:
-            return f.read()
-    return None
+    if not os.path.exists(html_file):
+        return None
+
+    with open(html_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Streamlit 的 iframe 无法直接访问本地的 rdkit_minimal.js / RDKit_minimal.wasm，
+    # 因此将资源路径指向 GitHub Raw，保证云端可以加载。
+    asset_base = (
+        "https://raw.githubusercontent.com/Halsey-ux/"
+        "Degrdation-Pathway-Collection/main"
+    )
+    replacements = {
+        'src="rdkit_minimal.js"': f'src="{asset_base}/rdkit_minimal.js"',
+        'href="RDKit_minimal.wasm"': f'href="{asset_base}/RDKit_minimal.wasm"',
+    }
+    for src, target in replacements.items():
+        content = content.replace(src, target)
+
+    return content
 
 # 加载并显示 HTML
 html_content = load_html()
