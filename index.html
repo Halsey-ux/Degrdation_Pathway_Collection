@@ -209,8 +209,35 @@
   <svg id="canvas"></svg>
 
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-  <script src="rdkit_minimal.js"></script>
+  <script src="https://unpkg.com/rdkit-js@2023.9.5/RDKit_minimal.js"></script>
   <script>
+    const RDKIT_CDN_BASE = "https://unpkg.com/rdkit-js@2023.9.5";
+    const RDKIT_WASM_URL = `${RDKIT_CDN_BASE}/RDKit_minimal.wasm`;
+    let rdkitInitPromise = null;
+
+    function preloadRdkit() {
+      if (!rdkitInitPromise) {
+        const wasmFetch = fetch(RDKIT_WASM_URL)
+          .then(resp => resp.arrayBuffer())
+          .then(buffer => new Uint8Array(buffer))
+          .catch(err => {
+            console.warn("RDKit wasm preload failed:", err);
+            return null;
+          });
+
+        rdkitInitPromise = wasmFetch.then(wasmBinary => {
+          const moduleConfig = {
+            locateFile: () => RDKIT_WASM_URL
+          };
+          if (wasmBinary) {
+            moduleConfig.wasmBinary = wasmBinary;
+          }
+          return initRDKitModule(moduleConfig);
+        });
+      }
+      return rdkitInitPromise;
+    }
+
     const NODE_VERTICAL_SPACING = 180;
     const toastEl = document.getElementById("toast");
     const rootNameInput = document.getElementById("rootName");
@@ -242,19 +269,22 @@
 
     commitState(null);
 
-    initRDKitModule().then(instance => {
-      RDKit = instance;
-      isRdkitReady = true;
-      updateStatus("RDKit 已就绪，可直接构建树状图。", true);
-      setupZoom();
-      if (pendingTree) {
-        drawTree(pendingTree);
-        pendingTree = null;
-      }
-    }).catch(err => {
-      updateStatus("RDKit 加载失败：" + err, false);
-      showToast("RDKit 加载失败：" + err, 4000);
-    });
+    preloadRdkit()
+      .then(instance => {
+        RDKit = instance;
+        isRdkitReady = true;
+        updateStatus("RDKit 已就绪，可直接构建树状图。", true);
+        setupZoom();
+        if (pendingTree) {
+          drawTree(pendingTree);
+          pendingTree = null;
+        }
+      })
+      .catch(err => {
+        console.error("RDKit 加载失败: ", err);
+        updateStatus("RDKit 加载失败：" + err, false);
+        showToast("RDKit 加载失败：" + err, 4000);
+      });
 
     function updateStatus(text, ready = false) {
       statusEl.textContent = text;
