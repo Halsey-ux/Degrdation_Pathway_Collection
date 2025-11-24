@@ -17,12 +17,16 @@ st.set_page_config(
 # 隐藏 Streamlit 的默认样式
 st.markdown("""
     <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        #MainMenu, footer, header {visibility: hidden;}
         .stApp {
-            padding-top: 0rem;
+            padding: 0;
+            background: #e9edf2;
         }
+        .block-container {
+            padding: 0;
+            max-width: 100%;
+        }
+        .st-emotion-cache-1wrcr25, .st-emotion-cache-1dp5vir {padding: 0;}
     </style>
 """, unsafe_allow_html=True)
 
