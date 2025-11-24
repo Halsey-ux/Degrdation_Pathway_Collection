@@ -209,31 +209,67 @@
   <svg id="canvas"></svg>
 
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-  <script src="https://unpkg.com/rdkit-js@2023.9.5/RDKit_minimal.js"></script>
   <script>
     const RDKIT_CDN_BASE = "https://unpkg.com/rdkit-js@2023.9.5";
-    const RDKIT_WASM_URL = `${RDKIT_CDN_BASE}/RDKit_minimal.wasm`;
+    const RDKIT_CDN_JS = `${RDKIT_CDN_BASE}/RDKit_minimal.js`;
+    const RDKIT_CDN_WASM = `${RDKIT_CDN_BASE}/RDKit_minimal.wasm`;
+    const RDKIT_LOCAL_JS = "rdkit_minimal.js";
+    const RDKIT_LOCAL_WASM = "RDKit_minimal.wasm";
+
     let rdkitInitPromise = null;
 
-    function preloadRdkit() {
-      if (!rdkitInitPromise) {
-        const wasmFetch = fetch(RDKIT_WASM_URL)
-          .then(resp => resp.arrayBuffer())
-          .then(buffer => new Uint8Array(buffer))
-          .catch(err => {
-            console.warn("RDKit wasm preload failed:", err);
-            return null;
-          });
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve(src);
+        script.onerror = () => reject(new Error(`加载脚本失败：${src}`));
+        document.head.appendChild(script);
+      });
+    }
 
-        rdkitInitPromise = wasmFetch.then(wasmBinary => {
-          const moduleConfig = {
-            locateFile: () => RDKIT_WASM_URL
-          };
-          if (wasmBinary) {
-            moduleConfig.wasmBinary = wasmBinary;
-          }
-          return initRDKitModule(moduleConfig);
-        });
+    async function fetchWasm(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`拉取 wasm 失败：${response.status}`);
+      }
+      const buffer = await response.arrayBuffer();
+      return new Uint8Array(buffer);
+    }
+
+    function initRdkitModuleWithFallback() {
+      if (!rdkitInitPromise) {
+        rdkitInitPromise = loadScript(RDKIT_CDN_JS)
+          .catch(err => {
+            console.warn("CDN 版 RDKit_minimal.js 加载失败，回退到本地文件。", err);
+            return loadScript(RDKIT_LOCAL_JS);
+          })
+          .then(() => fetchWasm(RDKIT_CDN_WASM)
+            .catch(err => {
+              console.warn("CDN wasm 加载失败，回退到本地 wasm。", err);
+              return fetchWasm(RDKIT_LOCAL_WASM).catch(wasmErr => {
+                console.warn("本地 wasm 也加载失败，将由 Emscripten 自行获取。", wasmErr);
+                return null;
+              });
+            }))
+          .then(wasmBinary => {
+            if (typeof initRDKitModule !== "function") {
+              throw new Error("initRDKitModule 未定义，RDKit 脚本加载失败。");
+            }
+            const moduleConfig = {
+              locateFile: (file) => {
+                if (file.endsWith(".wasm")) {
+                  return wasmBinary ? RDKIT_CDN_WASM : RDKIT_LOCAL_WASM;
+                }
+                return file;
+              }
+            };
+            if (wasmBinary) {
+              moduleConfig.wasmBinary = wasmBinary;
+            }
+            return initRDKitModule(moduleConfig);
+          });
       }
       return rdkitInitPromise;
     }
@@ -269,7 +305,7 @@
 
     commitState(null);
 
-    preloadRdkit()
+    initRdkitModuleWithFallback()
       .then(instance => {
         RDKit = instance;
         isRdkitReady = true;
