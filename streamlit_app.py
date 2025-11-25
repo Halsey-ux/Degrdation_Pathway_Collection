@@ -154,21 +154,227 @@ def _inject_preload_snippet(content: str, wasm_uri: Optional[str]) -> str:
     return preload_script + content
 
 
-@st.cache_data(show_spinner=False)
-def load_html() -> Optional[str]:
-    if not HTML_FILE.exists():
+def _has_valid_external_html() -> bool:
+    return HTML_FILE.exists() and HTML_FILE.stat().st_size > 0
+
+
+def _build_inline_app(assets: Dict[str, str]) -> Optional[str]:
+    js_uri = assets.get(RDKit_JS)
+    wasm_uri = assets.get(RDKit_WASM)
+    if not js_uri or not wasm_uri:
         return None
 
-    content = HTML_FILE.read_text(encoding="utf-8")
-    content = _strip_inline_rdkit_bootstrap(content)
+    wasm_base64 = wasm_uri.split(",", 1)[1]
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SMILES Degradation Pathway</title>
+  <style>
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: #fefefe;
+      color: #222;
+    }}
+    .app {{
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1.5rem;
+    }}
+    .controls {{
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }}
+    textarea {{
+      flex: 1;
+      min-height: 120px;
+      padding: 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #d0d0d0;
+      font-size: 0.95rem;
+      resize: vertical;
+    }}
+    button {{
+      padding: 0.8rem 1.5rem;
+      border-radius: 999px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }}
+    button:hover {{
+      background: #1d4ed8;
+    }}
+    .pathway {{
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-start;
+    }}
+    .step {{
+      min-width: 220px;
+      padding: 1rem;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 10px 40px rgba(15, 23, 42, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }}
+    .step h3 {{
+      margin: 0;
+      font-size: 1rem;
+      color: #0f172a;
+    }}
+    .step svg {{
+      width: 100%;
+      height: auto;
+    }}
+    .arrow {{
+      font-size: 1.5rem;
+      color: #94a3b8;
+    }}
+    .error {{
+      color: #b91c1c;
+      font-weight: 600;
+    }}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="controls">
+      <textarea id="smiles-input" placeholder="Enter SMILES, one per line">CCO
+CC(=O)O
+O=C(O)C(O)CO</textarea>
+      <button id="render-btn" type="button">Render Pathway</button>
+    </div>
+    <div id="feedback" class="error"></div>
+    <div class="pathway" id="pathway"></div>
+  </div>
+
+  <script src="{js_uri}"></script>
+  <script>
+    const RDKIT_WASM_BASE64 = "{wasm_base64}";
+
+    function base64ToBytes(base64) {{
+      const binaryString = atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {{
+        bytes[i] = binaryString.charCodeAt(i);
+      }}
+      return bytes;
+    }}
+
+    const rdkitReady = (function () {{
+      const wasmBytes = base64ToBytes(RDKIT_WASM_BASE64);
+      return initRDKitModule({{ wasmBinary: wasmBytes }});
+    }})();
+
+    function createStep(index, smiles, svg) {{
+      const card = document.createElement("div");
+      card.className = "step";
+      const title = document.createElement("h3");
+      title.innerText = `Step ${index + 1}`;
+      const smilesEl = document.createElement("div");
+      smilesEl.innerText = smiles;
+      smilesEl.style.fontFamily = "monospace";
+      smilesEl.style.fontSize = "0.85rem";
+      const svgWrapper = document.createElement("div");
+      svgWrapper.innerHTML = svg;
+      card.appendChild(title);
+      card.appendChild(svgWrapper);
+      card.appendChild(smilesEl);
+      return card;
+    }}
+
+    async function renderPathway() {{
+      const feedback = document.getElementById("feedback");
+      const container = document.getElementById("pathway");
+      feedback.innerText = "";
+      container.innerHTML = "<p>Rendering pathway…</p>";
+      const rawInput = document.getElementById("smiles-input").value || "";
+      const smilesList = rawInput
+        .split(/\\n+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (!smilesList.length) {{
+        container.innerHTML = "";
+        feedback.innerText = "Please provide at least one SMILES string.";
+        return;
+      }}
+
+      try {{
+        const RDKit = await rdkitReady;
+        container.innerHTML = "";
+        smilesList.forEach((smiles, index) => {{
+          try {{
+            const mol = RDKit.get_mol(smiles);
+            const svg = mol.get_svg();
+            mol.delete();
+            const stepEl = createStep(index, smiles, svg);
+            container.appendChild(stepEl);
+            if (index < smilesList.length - 1) {{
+              const arrow = document.createElement("div");
+              arrow.className = "arrow";
+              arrow.innerHTML = "&#8594;";
+              container.appendChild(arrow);
+            }}
+          }} catch (err) {{
+            const errorCard = document.createElement("div");
+            errorCard.className = "step";
+            errorCard.innerHTML = `<strong>Error parsing:</strong> ${smiles}`;
+            container.appendChild(errorCard);
+          }}
+        }});
+      }} catch (error) {{
+        container.innerHTML = "";
+        feedback.innerText =
+          "Failed to initialize RDKit. Please refresh and try again.";
+      }}
+    }}
+
+    document
+      .getElementById("render-btn")
+      .addEventListener("click", renderPathway);
+
+    window.addEventListener("DOMContentLoaded", () => {{
+      renderPathway();
+    }});
+  </script>
+</body>
+</html>
+    """
+    return html
+
+
+@st.cache_data(show_spinner=False)
+def load_html() -> Optional[str]:
     assets = preload_rdkit_assets()
-    content, wasm_uri = _inline_rdkit_assets(content, assets)
-    content = _inject_preload_snippet(content, wasm_uri)
-    return content
+    if _has_valid_external_html():
+        content = HTML_FILE.read_text(encoding="utf-8")
+        content = _strip_inline_rdkit_bootstrap(content)
+        content, wasm_uri = _inline_rdkit_assets(content, assets)
+        content = _inject_preload_snippet(content, wasm_uri)
+        return content
+
+    inline_app = _build_inline_app(assets)
+    return inline_app
 
 
 html_content = load_html()
 if html_content:
     st.components.v1.html(html_content, height=900, scrolling=True)
 else:
-    st.error("Cannot find index.html. Please ensure the file exists in the project root.")
+    st.error("Cannot load RDKit assets. Please verify rdkit_minimal.js and RDKit_minimal.wasm.")
