@@ -225,6 +225,9 @@
       <button id="undoBtn" title="撤回上一步">↶ 撤回</button>
       <button id="redoBtn" title="恢复">↷ 恢复</button>
       <button id="exportBtn">导出当前 SMILES (CSV)</button>
+      <button id="exportTreeBtn">保存反应路径</button>
+      <button id="importTreeBtn">读取反应路径</button>
+      <input type="file" id="importFileInput" accept=".csv" style="display:none">
     </div>
   </div>
 
@@ -312,6 +315,9 @@
     const undoBtn = document.getElementById("undoBtn");
     const redoBtn = document.getElementById("redoBtn");
     const exportBtn = document.getElementById("exportBtn");
+    const exportTreeBtn = document.getElementById("exportTreeBtn");
+    const importTreeBtn = document.getElementById("importTreeBtn");
+    const importFileInput = document.getElementById("importFileInput");
     const statusEl = document.getElementById("status");
     const svg = d3.select("#canvas");
     svg.style("display", "block");
@@ -674,6 +680,43 @@
     }
     });
 
+    exportTreeBtn.addEventListener("click", () => {
+      handleExportTree();
+    });
+
+    importTreeBtn.addEventListener("click", () => {
+      importFileInput.value = "";
+      importFileInput.click();
+    });
+
+    importFileInput.addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const text = e.target.result;
+          const tree = parseTreeCsv(text);
+          currentTree = tree;
+          selectedNodeId = currentTree ? currentTree.id : null;
+          updateSelectedLabel();
+          commitState(currentTree);
+          queueRender(currentTree, true);
+          if (currentTree) {
+            centerGraph();
+          }
+          showToast("已载入保存的反应路径。");
+        } catch (err) {
+          console.error(err);
+          showToast("导入失败：" + err.message, 3500);
+        }
+      };
+      reader.onerror = () => {
+        showToast("读取文件失败。", 3500);
+      };
+      reader.readAsText(file, "utf-8");
+    });
+
     undoBtn.addEventListener("click", () => {
       undoLast();
     });
@@ -702,6 +745,144 @@
       if (node.children) {
         node.children.forEach(child => collectSmiles(child, acc));
       }
+    }
+
+    async function handleExportTree() {
+      if (!currentTree) {
+        showToast("请先构建一条反应路径再保存。");
+        return;
+      }
+      try {
+        assignIds(currentTree);
+        const rows = [];
+        collectTreeRows(currentTree, null, rows);
+        const csv = buildTreeCsv(rows);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const fileName = `pathway_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+        const saved = await saveWithPicker(blob, fileName);
+        if (!saved) {
+          triggerDownload(blob, fileName);
+        }
+        showToast("已保存反应路径。");
+      } catch (err) {
+        console.error(err);
+        showToast("保存失败：" + err.message, 3500);
+      }
+    }
+
+    function collectTreeRows(node, parentId, acc) {
+      if (!node) return;
+      acc.push({
+        id: node.id || "",
+        parentId: parentId || "",
+        name: node.name || "",
+        smiles: node.smiles || ""
+      });
+      if (node.children) {
+        node.children.forEach(child => collectTreeRows(child, node.id, acc));
+      }
+    }
+
+    function buildTreeCsv(rows) {
+      const header = ["id", "parentId", "name", "smiles"];
+      const escape = value => `"${String(value || "").replace(/"/g, '""')}"`;
+      const lines = [header.join(",")];
+      rows.forEach(row => {
+        lines.push(
+          [row.id, row.parentId, row.name, row.smiles].map(escape).join(",")
+        );
+      });
+      return lines.join("\r\n");
+    }
+
+    function parseTreeCsv(text) {
+      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        throw new Error("文件内容为空。");
+      }
+      const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+      const idIdx = header.indexOf("id");
+      const parentIdx = header.indexOf("parentid");
+      const nameIdx = header.indexOf("name");
+      const smilesIdx = header.indexOf("smiles");
+      if (idIdx === -1 || parentIdx === -1 || nameIdx === -1 || smilesIdx === -1) {
+        throw new Error("CSV 需包含 id,parentId,name,smiles 列。");
+      }
+
+      const tempNodes = new Map();
+      lines.slice(1).forEach((line, index) => {
+        if (!line) return;
+        const cols = parseCsvLine(line);
+        const smiles = cols[smilesIdx]?.trim();
+        if (!smiles) {
+          throw new Error(`第 ${index + 2} 行缺少 SMILES。`);
+        }
+        const tempId = cols[idIdx]?.trim() || `row-${index}`;
+        if (tempNodes.has(tempId)) {
+          throw new Error(`CSV 中存在重复 id：${tempId}`);
+        }
+        const node = {
+          name: cols[nameIdx]?.trim() || "",
+          smiles,
+          children: [],
+          _parent: cols[parentIdx]?.trim() || ""
+        };
+        tempNodes.set(tempId, node);
+      });
+
+      let root = null;
+      tempNodes.forEach((node, key) => {
+        const parentKey = node._parent;
+        if (parentKey && tempNodes.has(parentKey)) {
+          tempNodes.get(parentKey).children.push(node);
+        } else {
+          if (root) {
+            throw new Error("存在多个根节点，请检查 parentId 列。");
+          }
+          root = node;
+        }
+        delete node._parent;
+      });
+
+      if (!root) {
+        throw new Error("未找到根节点，请检查 parentId 列。");
+      }
+
+      idCounter = 0;
+      assignIds(root);
+      return root;
+    }
+
+    function parseCsvLine(line) {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (inQuotes) {
+          if (char === '"') {
+            if (line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            current += char;
+          }
+        } else {
+          if (char === '"') {
+            inQuotes = true;
+          } else if (char === ",") {
+            result.push(current);
+            current = "";
+          } else {
+            current += char;
+          }
+        }
+      }
+      result.push(current);
+      return result;
     }
 
     async function saveWithPicker(blob, suggestedName) {
