@@ -126,9 +126,20 @@
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
     }
     .instructions .actions button {
       min-width: 140px;
+    }
+    .height-control label {
+      font-size: 13px;
+      color: #555;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .height-control input[type="range"] {
+      width: 180px;
     }
     .canvas-frame {
       margin: 0 24px 24px;
@@ -139,7 +150,7 @@
     }
     #canvas {
       width: 100%;
-      height: calc(100vh - 320px);
+      height: var(--canvas-height, 650px);
       min-height: 420px;
       display: block;
     }
@@ -228,6 +239,13 @@
       <button id="exportTreeBtn">保存反应路径</button>
       <button id="importTreeBtn">读取反应路径</button>
       <input type="file" id="importFileInput" accept=".csv" style="display:none">
+      <div class="height-control">
+        <label>
+          树状图高度
+          <input type="range" id="heightRange" min="400" max="1200" value="650">
+          <span id="heightValue">650px</span>
+        </label>
+      </div>
     </div>
   </div>
 
@@ -318,7 +336,10 @@
     const exportTreeBtn = document.getElementById("exportTreeBtn");
     const importTreeBtn = document.getElementById("importTreeBtn");
     const importFileInput = document.getElementById("importFileInput");
+    const heightRangeEl = document.getElementById("heightRange");
+    const heightValueEl = document.getElementById("heightValue");
     const statusEl = document.getElementById("status");
+    const canvasEl = document.getElementById("canvas");
     const svg = d3.select("#canvas");
     svg.style("display", "block");
     const g = svg.append("g").attr("class", "viewport");
@@ -337,6 +358,20 @@
     const redoStack = [];
 
     commitState(null);
+
+    function applyCanvasHeight(value) {
+      const px = `${value}px`;
+      heightValueEl.textContent = px;
+      canvasEl.style.height = px;
+      canvasEl.parentElement.style.minHeight = px;
+      if (currentTree) {
+        centerGraph();
+      }
+    }
+    applyCanvasHeight(heightRangeEl.value);
+    heightRangeEl.addEventListener("input", event => {
+      applyCanvasHeight(event.target.value);
+    });
 
     initRdkitModuleWithFallback()
       .then(instance => {
