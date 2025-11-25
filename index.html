@@ -340,6 +340,7 @@
     const heightValueEl = document.getElementById("heightValue");
     const statusEl = document.getElementById("status");
     const canvasEl = document.getElementById("canvas");
+    const canvasEl = document.getElementById("canvas");
     const svg = d3.select("#canvas");
     svg.style("display", "block");
     const g = svg.append("g").attr("class", "viewport");
@@ -356,20 +357,22 @@
     let pendingTree = null;
     const historyStack = [];
     const redoStack = [];
+    let lastLayoutRoot = null;
 
     commitState(null);
 
     function computeDefaultHeight() {
       const viewport = window.innerHeight;
-      const builderHeight = document.querySelector(".builder").offsetHeight || 0;
-      const statusHeight = document.getElementById("status").offsetHeight || 0;
-      const controlsHeight = document.querySelector(".instructions").offsetHeight || 0;
-      const padding = 120;
+      const builderHeight = document.querySelector(".builder")?.offsetHeight || 0;
+      const statusHeight = document.getElementById("status")?.offsetHeight || 0;
+      const controlsHeight = document.querySelector(".instructions")?.offsetHeight || 0;
+      const padding = 140;
       return Math.max(450, viewport - builderHeight - statusHeight - controlsHeight - padding);
     }
 
     function applyCanvasHeight(value) {
-      const px = `${value}px`;
+      const numeric = Number(value);
+      const px = `${numeric}px`;
       heightValueEl.textContent = px;
       canvasEl.style.height = px;
       canvasEl.parentElement.style.minHeight = px;
@@ -378,12 +381,22 @@
       }
     }
 
-    const defaultHeight = computeDefaultHeight();
-    heightRangeEl.value = defaultHeight;
-    applyCanvasHeight(defaultHeight);
+    function setAutoCanvasHeight() {
+      const auto = computeDefaultHeight();
+      heightRangeEl.value = auto;
+      applyCanvasHeight(auto);
+    }
+
+    setAutoCanvasHeight();
 
     heightRangeEl.addEventListener("input", event => {
       applyCanvasHeight(event.target.value);
+    });
+
+    window.addEventListener("resize", () => {
+      if (!heightRangeEl.matches(":active")) {
+        setAutoCanvasHeight();
+      }
     });
 
     window.addEventListener("resize", () => {
@@ -498,6 +511,7 @@
       try {
         const prepared = await attachSvgs(tree);
         const root = d3.hierarchy(prepared);
+        lastLayoutRoot = root;
         const containerWidth = svg.node().parentNode.clientWidth;
         const containerHeight = svg.node().parentNode.clientHeight;
         svg.attr("width", containerWidth).attr("height", containerHeight);
@@ -616,15 +630,34 @@
       g.selectAll(".link").remove();
     }
 
+    function getLayoutNode(id) {
+      if (!lastLayoutRoot || !id) return null;
+      let found = null;
+      lastLayoutRoot.each(node => {
+        if (!found && node.data.id === id) {
+          found = node;
+        }
+      });
+      return found;
+    }
+
     function centerGraph() {
       if (!zoom || !g.node()) return;
-      const width = svg.node().clientWidth || window.innerWidth;
-      const height = svg.node().clientHeight || (window.innerHeight - 200);
+      const width = canvasEl.clientWidth || svg.node().clientWidth || window.innerWidth;
+      const height = canvasEl.clientHeight || svg.node().clientHeight || (window.innerHeight - 200);
       const box = g.node().getBBox();
       if (!box || !isFinite(box.width) || box.width === 0) return;
       const scale = Math.min(1.6, Math.max(0.3, Math.min(width / (box.width + 120), height / (box.height + 120))));
-      const tx = (width - (box.x + box.width) * scale) / 2;
-      const ty = Math.max(20, (height - (box.y + box.height) * scale) / 3);
+      const targetNode = getLayoutNode(selectedNodeId);
+      let tx;
+      let ty;
+      if (targetNode) {
+        tx = width / 2 - targetNode.x * scale;
+        ty = height / 2 - targetNode.y * scale;
+      } else {
+        tx = (width - (box.x + box.width) * scale) / 2;
+        ty = Math.max(20, (height - (box.y + box.height) * scale) / 3);
+      }
       svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     }
 
