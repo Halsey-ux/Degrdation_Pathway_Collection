@@ -764,8 +764,9 @@
       childNameInput.value = "";
       childSmilesInput.value = "";
       queueRender(currentTree, true);
-      centerGraph();
+      selectedNodeId = parent.id;
       commitState(currentTree);
+      centerGraph();
       showToast(isRdkitReady ? `已为 ${parent.name || parent.smiles} 添加子节点。` : "子节点已加入，等待 RDKit 渲染…");
     });
 
