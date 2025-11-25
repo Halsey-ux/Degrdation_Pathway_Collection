@@ -177,6 +177,10 @@
       stroke: var(--accent);
       stroke-width: 2px;
     }
+    .node.duplicate circle {
+      stroke: #d64242;
+      stroke-width: 3px;
+    }
     #toast {
       position: fixed;
       top: 18px;
@@ -238,6 +242,8 @@
       <button id="exportBtn">导出当前 SMILES (CSV)</button>
       <button id="exportTreeBtn">保存反应路径</button>
       <button id="importTreeBtn">读取反应路径</button>
+      <button id="deleteNodeBtn">删除当前母分子</button>
+      <button id="dedupeBtn">查重</button>
       <input type="file" id="importFileInput" accept=".csv" style="display:none">
       <div class="height-control">
         <label>
@@ -336,6 +342,8 @@
     const exportTreeBtn = document.getElementById("exportTreeBtn");
     const importTreeBtn = document.getElementById("importTreeBtn");
     const importFileInput = document.getElementById("importFileInput");
+    const deleteNodeBtn = document.getElementById("deleteNodeBtn");
+    const dedupeBtn = document.getElementById("dedupeBtn");
     const heightRangeEl = document.getElementById("heightRange");
     const heightValueEl = document.getElementById("heightValue");
     const statusEl = document.getElementById("status");
@@ -357,6 +365,7 @@
     let pendingTree = null;
     const historyStack = [];
     const redoStack = [];
+    let duplicateIds = new Set();
     let lastLayoutRoot = null;
 
     commitState(null);
@@ -566,8 +575,9 @@
         nodeUpdate.select("text").text(d => d.data.name || d.data.smiles);
         nodes.exit().remove();
 
-      updateSelectedStyles();
-      centerGraph();
+        updateSelectedStyles();
+        updateDuplicateStyles();
+        centerGraph();
       } catch (err) {
         console.error(err);
         showToast("渲染失败：" + err.message, 3500);
@@ -578,12 +588,22 @@
       g.selectAll(".node").classed("selected", d => d.data.id === selectedNodeId);
     }
 
+    function updateDuplicateStyles() {
+      g.selectAll(".node").classed("duplicate", d => duplicateIds.has(d.data.id));
+    }
+
+    function clearDuplicateMarks() {
+      duplicateIds.clear();
+      updateDuplicateStyles();
+    }
+
     function commitState(tree) {
       historyStack.push(JSON.stringify(tree || null));
       if (historyStack.length > 40) {
         historyStack.shift();
       }
       redoStack.length = 0;
+      clearDuplicateMarks();
     }
 
     function undoLast() {
@@ -614,6 +634,7 @@
         currentTree = state ? JSON.parse(state) : null;
         selectedNodeId = currentTree ? currentTree.id : null;
         updateSelectedLabel();
+        clearDuplicateMarks();
         queueRender(currentTree, true);
         if (currentTree) {
           centerGraph();
@@ -697,6 +718,7 @@
       selectedNodeId = id;
       updateSelectedLabel();
       updateSelectedStyles();
+      updateDuplicateStyles();
       showToast(`已选择：${node.name || node.smiles}`);
     }
 
@@ -804,6 +826,14 @@
         showToast("读取文件失败。", 3500);
       };
       reader.readAsText(file, "utf-8");
+    });
+
+    deleteNodeBtn.addEventListener("click", () => {
+      deleteCurrentNode();
+    });
+
+    dedupeBtn.addEventListener("click", () => {
+      detectDuplicates();
     });
 
     undoBtn.addEventListener("click", () => {
@@ -1000,6 +1030,83 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+    }
+
+    function deleteCurrentNode() {
+      if (!currentTree || !selectedNodeId) {
+        showToast("请选择要删除的节点。");
+        return;
+      }
+      const node = findNode(currentTree, selectedNodeId);
+      if (!node) {
+        showToast("当前节点不存在。");
+        return;
+      }
+      if (!node.children) node.children = [];
+      let newTree = currentTree;
+      if (currentTree.id === selectedNodeId) {
+        newTree = null;
+      } else {
+        const parent = findParentByChildId(currentTree, selectedNodeId);
+        if (!parent) {
+          showToast("未找到父节点，无法删除。");
+          return;
+        }
+        parent.children = parent.children.filter(child => child.id !== selectedNodeId);
+        newTree = currentTree;
+        selectedNodeId = parent.id;
+      }
+      currentTree = newTree;
+      updateSelectedLabel();
+      commitState(currentTree);
+      queueRender(currentTree, true);
+      if (currentTree) {
+        centerGraph();
+      } else {
+        clearGraph();
+      }
+      showToast("已删除节点及其子节点。");
+    }
+
+    function findParentByChildId(node, childId, parent = null) {
+      if (!node) return null;
+      if (node.children && node.children.some(child => child.id === childId)) {
+        return node;
+      }
+      if (!node.children) return null;
+      for (const child of node.children) {
+        const found = findParentByChildId(child, childId, node);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function detectDuplicates() {
+      if (!currentTree) {
+        showToast("请先构建反应路径。");
+        return;
+      }
+      const map = new Map();
+      function walk(node) {
+        if (!node) return;
+        const key = (node.smiles || "").trim().toUpperCase();
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(node.id);
+        if (node.children) node.children.forEach(walk);
+      }
+      walk(currentTree);
+      duplicateIds = new Set();
+      map.forEach(ids => {
+        if (ids.length > 1) {
+          ids.forEach(id => duplicateIds.add(id));
+        }
+      });
+      updateDuplicateStyles();
+      if (duplicateIds.size) {
+        showToast(`发现 ${duplicateIds.size} 个重复节点。`);
+      } else {
+        showToast("未发现重复 SMILES。");
+      }
     }
   </script>
 </body>
