@@ -359,6 +359,15 @@
 
     commitState(null);
 
+    function computeDefaultHeight() {
+      const viewport = window.innerHeight;
+      const builderHeight = document.querySelector(".builder").offsetHeight || 0;
+      const statusHeight = document.getElementById("status").offsetHeight || 0;
+      const controlsHeight = document.querySelector(".instructions").offsetHeight || 0;
+      const padding = 120;
+      return Math.max(450, viewport - builderHeight - statusHeight - controlsHeight - padding);
+    }
+
     function applyCanvasHeight(value) {
       const px = `${value}px`;
       heightValueEl.textContent = px;
@@ -368,9 +377,21 @@
         centerGraph();
       }
     }
-    applyCanvasHeight(heightRangeEl.value);
+
+    const defaultHeight = computeDefaultHeight();
+    heightRangeEl.value = defaultHeight;
+    applyCanvasHeight(defaultHeight);
+
     heightRangeEl.addEventListener("input", event => {
       applyCanvasHeight(event.target.value);
+    });
+
+    window.addEventListener("resize", () => {
+      if (!heightRangeEl.matches(":focus")) {
+        const autoHeight = computeDefaultHeight();
+        heightRangeEl.value = autoHeight;
+        applyCanvasHeight(autoHeight);
+      }
     });
 
     initRdkitModuleWithFallback()
